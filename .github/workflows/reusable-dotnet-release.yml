@@ -1,0 +1,92 @@
+name: Reusable .NET Release
+
+on:
+  workflow_call:
+    inputs:
+      solution:
+        description: Pfad zur .slnx Datei
+        required: true
+        type: string
+      publish-project:
+        description: Pfad zum Publish-Projekt (.csproj)
+        required: true
+        type: string
+      dotnet-version:
+        description: .NET SDK Version
+        required: false
+        type: string
+        default: '9.0.x'
+      publish-args:
+        description: >-
+          Zusaetzliche dotnet publish Argumente (z.B.
+          -r win-x64 --self-contained -p:PublishSingleFile=true).
+          Wenn gesetzt, wird ohne --no-build publiziert (eigener Build
+          mit RID/self-contained noetig).
+        required: false
+        type: string
+        default: ''
+      asset-paths:
+        description: >-
+          Zusaetzliche Dateien oder Ordner fuer das GitHub Release
+          (newline-separiert). Ordner werden als ZIP gepackt.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore
+        run: dotnet restore ${{ inputs.solution }}
+
+      - name: Build
+        run: dotnet build ${{ inputs.solution }} --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test ${{ inputs.solution }} --no-build --configuration Release --verbosity normal
+
+      - name: Publish (standard)
+        if: inputs.publish-args == ''
+        run: dotnet publish ${{ inputs.publish-project }} --no-build --configuration Release --output ./publish
+
+      - name: Publish (self-contained)
+        if: inputs.publish-args != ''
+        run: dotnet publish ${{ inputs.publish-project }} --configuration Release --output ./publish ${{ inputs.publish-args }}
+
+      - name: Package additional assets
+        if: inputs.asset-paths != ''
+        shell: pwsh
+        run: |
+          $paths = "${{ inputs.asset-paths }}" -split "`n" | Where-Object { $_.Trim() -ne '' }
+          foreach ($path in $paths) {
+            $path = $path.Trim()
+            if (Test-Path $path -PathType Container) {
+              $name = Split-Path $path -Leaf
+              Compress-Archive -Path "$path\*" -DestinationPath ".\publish\$name.zip"
+              Write-Host "Packed folder '$path' -> publish/$name.zip"
+            } elseif (Test-Path $path) {
+              Copy-Item $path .\publish\
+              Write-Host "Copied file '$path' -> publish/"
+            } else {
+              Write-Warning "Asset path not found: $path"
+            }
+          }
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ./publish/*

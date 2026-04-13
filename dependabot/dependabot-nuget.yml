@@ -1,0 +1,40 @@
+# Dependabot-Config Template fuer NuGet-Repos
+# Kopiere nach .github/dependabot.yml im Ziel-Repo
+#
+# Prinzip:
+# - Daily Check, aber nur 1 PR gleichzeitig offen
+# - Alle Updates gebuendelt in einer Gruppe (nicht 20 einzelne PRs)
+# - Security-Patches separat (hohe Prio)
+# - Target: develop (oder main, je nach Repo)
+# - cleanup-dependabot.yml schliesst alte PRs vor neuem Run
+
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/src"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 1
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "nuget"
+    groups:
+      all-updates:
+        applies-to: version-updates
+        update-types:
+          - "major"
+          - "minor"
+          - "patch"
+      security:
+        applies-to: security-updates
+        update-types:
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"

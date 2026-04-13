@@ -1,0 +1,46 @@
+name: Reusable VSIX CI
+
+on:
+  workflow_call:
+    inputs:
+      solution:
+        description: Pfad zur .slnx Datei
+        required: true
+        type: string
+      test-dll:
+        description: Pfad zur Test-DLL (Glob-Pattern)
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore
+        run: nuget restore ${{ inputs.solution }}
+
+      - name: Build
+        # DeployExtension=false ueberspringt den DeployVsixExtensionFiles-Target,
+        # der nur fuer lokales VS-Debugging sinnvoll ist und in CI mit VSSDK1031 bricht.
+        run: msbuild ${{ inputs.solution }} /p:Configuration=Release /p:DeployExtension=false /v:minimal
+
+      - name: Test
+        if: inputs.test-dll != ''
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vstest = & $vswhere -latest -find "Common7\IDE\Extensions\TestPlatform\vstest.console.exe" | Select-Object -First 1
+          if (-not $vstest) { throw "vstest.console.exe nicht gefunden" }
+          Write-Host "Verwende: $vstest"
+          & $vstest ${{ inputs.test-dll }}
